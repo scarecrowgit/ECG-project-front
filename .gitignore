@@ -1,0 +1,24 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+ecg-app/node_modules
+/node_modules
+ecg-app/.pnp
+ecg-app/.pnp.js
+
+# testing
+/ecg-app/coverage
+
+# production
+/ecg-app/build
+
+# misc
+ecg-app/.DS_Store
+ecg-app/.env.local
+ecg-app/.env.development.local
+ecg-app/.env.test.local
+ecg-app/.env.production.local
+
+ecg-app/npm-debug.log*
+ecg-app/yarn-debug.log*
+ecg-app/yarn-error.log*

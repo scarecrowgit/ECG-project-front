@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -12,7 +12,6 @@ import {
 } from 'chart.js';
 import axiosInstance from '../axios';
 
-// Register Chart.js components
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -27,106 +26,157 @@ const ECGChart = () => {
   const [ecgData, setEcgData] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [userId, setUserId] = useState(null);
+  const [warning, setWarning] = useState(false);
+  const chartRef = useRef(null); // Ссылка на экземпляр графика
 
   const fetchECGData = async () => {
     try {
-      // Retrieve user_id from localStorage
-      const userId = localStorage.getItem('user_id');
+      const storedUserId = localStorage.getItem('user_id');
       
-      if (!userId) {
-        setError('No user ID found. Please log in.');
+      if (!storedUserId) {
+        setError('Не найден ID пользователя. Пожалуйста, войдите в систему.');
         setLoading(false);
         return;
       }
 
-      // Fetch ECG data for the specific user
+      setUserId(storedUserId);
+
       const response = await axiosInstance.get('/api/ecg-data', {
-        params: { user_id: userId }
+        params: { user_id: storedUserId }
       });
 
-      // Sort data by timestamp to ensure chronological order
       const sortedData = response.data.data.sort((a, b) => 
         new Date(a.timestamp) - new Date(b.timestamp)
       );
 
-      setEcgData(sortedData);
+      const amplifiedData = sortedData.map(point => ({
+        ...point,
+        ecg_signal: point.ecg_signal
+      }));
+
+      const exceedsThreshold = amplifiedData.some(point => point.ecg_signal > 1.3);
+      setWarning(exceedsThreshold);
+
+      setEcgData(amplifiedData);
       setError(null);
       setLoading(false);
     } catch (error) {
-      console.error('Error fetching ECG data:', error);
-      setError('Failed to fetch ECG data. Please try again.');
+      console.error('Ошибка при получении данных ЭКГ:', error);
+      setError('Не удалось получить данные ЭКГ. Пожалуйста, попробуйте снова.');
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    // Fetch immediately on mount
     fetchECGData();
-
-    // Set up interval to fetch every 5 seconds
     const interval = setInterval(fetchECGData, 5000);
-
-    // Clean up interval on component unmount
     return () => clearInterval(interval);
   }, []);
 
-  // If there's an error, render error message
+  const downloadChart = () => {
+    if (chartRef.current) {
+      const chartUrl = chartRef.current.toBase64Image(); // Получаем URL изображения в формате base64
+      const link = document.createElement('a'); // Создаем временную ссылку
+      link.href = chartUrl; // Устанавливаем ссылку на base64 изображение
+      link.download = 'ecg_chart.png'; // Устанавливаем имя файла для скачивания
+      link.click(); // Программно кликаем по ссылке, чтобы скачать файл
+    }
+  };
+
   if (error) {
     return <div className="text-red-500 p-4">{error}</div>;
   }
 
-  // Loading state
   if (loading) {
-    return <div className="p-4">Loading ECG data...</div>;
+    return <div className="p-4">Загрузка данных ЭКГ...</div>;
   }
 
-  // If no data
   if (ecgData.length === 0) {
-    return <div className="p-4">No ECG data available.</div>;
+    return <div className="p-4">Нет доступных данных ЭКГ.</div>;
   }
 
   const chartData = {
     labels: ecgData.map((point) => new Date(point.timestamp).toLocaleTimeString()),
     datasets: [
       {
-        label: 'ECG Signal',
+        label: 'Сигнал ЭКГ',
         data: ecgData.map((point) => point.ecg_signal),
-        borderColor: 'rgba(75, 192, 192, 1)',
-        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+        borderColor: 'rgba(255, 0, 0, 1)',
+        backgroundColor: 'rgba(255, 0, 0, 0.2)',
         fill: false,
-        tension: 0.1,
+        tension: 0.4,
+        pointRadius: 0,
       },
     ],
   };
 
   const options = {
     responsive: true,
-    maintainAspectRatio: false,
+    maintainAspectRatio: true,
     plugins: {
       title: {
         display: true,
-        text: 'ECG Signal',
+        text: 'Сигнал ЭКГ',
+        font: {
+          size: 18
+        }
       },
     },
     scales: {
       x: {
         title: {
           display: true,
-          text: 'Time'
-        }
+          text: 'Время'
+        },
+        ticks: {
+          autoSkip: true,
+          maxRotation: 45,
+          minRotation: 45,
+        },
       },
       y: {
+        min: Math.min(...ecgData.map((point) => point.ecg_signal)) - 1,
+        max: Math.max(...ecgData.map((point) => point.ecg_signal)) + 1,
         title: {
           display: true,
-          text: 'ECG Signal Value'
-        }
+          text: 'Значение сигнала ЭКГ'
+        },
       },
     },
   };
 
   return (
-    <div className="h-96">
-      <Line data={chartData} options={options} />
+    <div className="space-y-4">
+      {userId && (
+        <div className="bg-gray-100 p-2 rounded">
+          <span className="font-bold">ID пользователя:</span> {userId}
+        </div>
+      )}
+      {warning && (
+        <div className="text-red-500 p-4">
+          <strong>Внимание:</strong> Одно из значений сигнала ЭКГ высокое.
+          <div className="mt-2">
+            <a
+              href="tel:112"
+              className="bg-red-500 text-white p-2 rounded"
+            >
+              Позвонить в экстренную службу
+            </a>
+          </div>
+        </div>
+      )}
+      <div className="flex justify-between items-center">
+        <div className="h-[500px] w-full">
+          <Line ref={chartRef} data={chartData} options={options} />
+        </div>
+        <button
+          onClick={downloadChart}
+          className="bg-blue-500 text-white p-2 rounded"
+        >
+          Скачать график
+        </button>
+      </div>
     </div>
   );
 };
